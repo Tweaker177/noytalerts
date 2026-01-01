@@ -1,309 +1,77 @@
 #import <UIKit/UIKit.h>
-#import <Foundation/Foundation.h>
 
-#pragma mark - Helpers
-
-static void killVC(UIViewController *vc) {
-    if (!vc) return;
-
-    if (vc.view) {
-        [vc.view removeFromSuperview];
-        vc.view.hidden = YES;
-    }
-
-    if (vc.presentingViewController) {
-        [vc dismissViewControllerAnimated:NO completion:nil];
-    }
+// --- Improvements to your Version Spoofing ---
+// Some YT versions check the version via YTDeviceInfo rather than NSBundle directly.
+%hook YTDeviceInfo
+- (NSString *)appVersion {
+    return @"20.15.1";
 }
-
-static BOOL isBadYTClass(NSString *name) {
-    if (![name containsString:@"YT"]) return NO;
-
-    if ([name containsString:@"Update"] ||
-        [name containsString:@"Upgrade"] ||
-        [name containsString:@"Alert"] ||
-        [name containsString:@"Dialog"]) {
-        return YES;
-    }
-
-    return NO;
-}
-
-#pragma mark - Injection Proof
-
-static BOOL showedInjectionAlert = NO;
-
-__attribute__((constructor))
-static void ytnoalerts_init() {
-    @autoreleasepool {
-        [[NSNotificationCenter defaultCenter]
-            addObserverForName:UIApplicationDidFinishLaunchingNotification
-                        object:nil
-                         queue:[NSOperationQueue mainQueue]
-                    usingBlock:^(NSNotification *note) {
-
-            if (showedInjectionAlert) return;
-            showedInjectionAlert = YES;
-
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIWindow *keyWindow = nil;
-
-                for (UIWindow *w in UIApplication.sharedApplication.windows) {
-                    if (w.isKeyWindow) {
-                        keyWindow = w;
-                        break;
-                    }
-                }
-
-                if (!keyWindow) return;
-
-                UIViewController *vc = keyWindow.rootViewController;
-                while (vc.presentedViewController) {
-                    vc = vc.presentedViewController;
-                }
-
-                UIAlertController *alert =
-                    [UIAlertController alertControllerWithTitle:@"ytnoalerts"
-                                                        message:@"Injection confirmed"
-                                                 preferredStyle:UIAlertControllerStyleAlert];
-
-                [alert addAction:[UIAlertAction actionWithTitle:@"OK"
-                                                          style:UIAlertActionStyleDefault
-                                                        handler:nil]];
-
-                [vc presentViewController:alert animated:YES completion:nil];
-            });
-        }];
-    }
-}
-
-#pragma mark - Version Spoofing
-
-%hook NSBundle
-
-- (id)objectForInfoDictionaryKey:(NSString *)key {
-    if ([key isEqualToString:@"CFBundleShortVersionString"]) {
-        return @"20.15.1";
-    }
-    if ([key isEqualToString:@"CFBundleVersion"]) {
-        return @"20.15.1";
-    }
-    return %orig;
-}
-
 %end
 
-#pragma mark - Global Presentation Intercept
+%hook YTVersionUtils
++ (BOOL)isUpgradeRequired { return NO; }
++ (BOOL)isUpgradeRecommended { return NO; }
++ (NSString *)appVersion { return @"20.15.1"; }
+%end
 
-%hook UIViewController
+// --- Killing the Presenter Logic (The "Brain" of the alert) ---
+%hook YTUpgradePresenter
+- (void)showUpgrade { /* Block entirely */ }
+- (void)showForceUpgrade { /* Block entirely */ }
+- (void)prepareUpgradeForced:(BOOL)arg1 { /* Block entirely */ }
+- (BOOL)isUpgradeRequired { return NO; }
+%end
 
-- (void)presentViewController:(UIViewController *)vc
-                      animated:(BOOL)animated
-                    completion:(void (^)(void))completion {
+// --- Fixing the Frozen UI / Touch Issues ---
+%hook UIApplication
+- (void)beginIgnoringInteractionEvents {
+    // YouTube calls this when showing the update alert to freeze the background.
+    // We prevent it from ever locking the UI.
+    return;
+}
+%end
 
-    NSString *name = NSStringFromClass([vc class]);
-    if (isBadYTClass(name)) {
-        killVC(vc);
+%hook UIWindow
+- (void)makeKeyAndVisible {
+    // If a window is being made key (top priority) and it's an alert window, block it.
+    NSString *className = NSStringFromClass([self class]);
+    if ([className containsString:@"YTAlertWindow"] || [className containsString:@"YTActionSheetWindow"]) {
+        return; 
+    }
+    %orig;
+}
+
+- (void)setUserInteractionEnabled:(BOOL)enabled {
+    // If something tries to disable touch on the main window, force it to stay ON.
+    if (!enabled && [NSStringFromClass([self class]) isEqualToString:@"UIWindow"]) {
+        %orig(YES);
         return;
     }
-
     %orig;
 }
-
 %end
 
-#pragma mark - Known YouTube Controllers
+@interface YTBackdropView : UIView @end
 
-@interface YTUpdateRequiredViewController : UIViewController @end
-@interface YTAppUpgradeDialogController : UIViewController @end
-@interface YTAlertViewController : UIViewController @end
-@interface YTDialogViewController : UIViewController @end
-
-%hook YTUpdateRequiredViewController
-
-- (id)init {
-    id r = %orig;
-    killVC(r);
-    return r;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    id r = %orig;
-    killVC(r);
-    return r;
-}
-
-- (void)loadView {
-    %orig;
-    killVC(self);
-}
-
-- (void)viewDidLoad {
-    %orig;
-    killVC(self);
-}
-
-- (void)viewWillAppear:(BOOL)animated {
-    killVC(self);
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-    killVC(self);
-}
-
-%end
-
-%hook YTAppUpgradeDialogController
-
-- (id)init {
-    id r = %orig;
-    killVC(r);
-    return r;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    id r = %orig;
-    killVC(r);
-    return r;
-}
-
-- (void)loadView {
-    %orig;
-    killVC(self);
-}
-
-- (void)viewDidLoad {
-    %orig;
-    killVC(self);
-}
-
-- (void)viewWillAppear:(BOOL)animated {
-    killVC(self);
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-    killVC(self);
-}
-
-%end
-
-%hook YTAlertViewController
-
-- (id)init {
-    id r = %orig;
-    killVC(r);
-    return r;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    id r = %orig;
-    killVC(r);
-    return r;
-}
-
-- (void)loadView {
-    %orig;
-    killVC(self);
-}
-
-- (void)viewDidLoad {
-    %orig;
-    killVC(self);
-}
-
-- (void)viewWillAppear:(BOOL)animated {
-    killVC(self);
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-    killVC(self);
-}
-
-%end
-
-%hook YTDialogViewController
-
-- (id)init {
-    id r = %orig;
-    killVC(r);
-    return r;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    id r = %orig;
-    killVC(r);
-    return r;
-}
-
-- (void)loadView {
-    %orig;
-    killVC(self);
-}
-
-- (void)viewDidLoad {
-    %orig;
-    killVC(self);
-}
-
-- (void)viewWillAppear:(BOOL)animated {
-    killVC(self);
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-    killVC(self);
-}
-
-%end
-
-#pragma mark - UIView Overlay Kill
-
-%hook UIView
-
+// --- The "Dimming View" Killer ---
+// YouTube often uses a backdrop view that isn't a VC.
+%hook YTBackdropView
 - (void)didMoveToWindow {
     %orig;
-
-    NSString *name = NSStringFromClass([self class]);
-    if (isBadYTClass(name)) {
-        [self removeFromSuperview];
-        self.hidden = YES;
-    }
+    [self removeFromSuperview];
 }
-
 %end
 
-#pragma mark - UIWindow Clamp
+@interface YTBaseAlertViewController : UIViewController @end
 
-%hook UIWindow
-
-- (void)setWindowLevel:(UIWindowLevel)level {
-    if (level > UIWindowLevelAlert) {
-        return;
-    }
+// --- Clean dismissal hook ---
+%hook YTBaseAlertViewController
+- (void)viewWillAppear:(BOOL)animated {
     %orig;
+    // Instead of just killing it, we force the app to think it was dismissed normally
+    [self dismissViewControllerAnimated:NO completion:^{
+        // Force the app to resume touches just in case
+        [[UIApplication sharedApplication] endIgnoringInteractionEvents];
+    }];
 }
-
-%end
-
-
-#pragma mark -  TOUCH FIX
-
-%hook UIWindow
-
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    NSString *cls = NSStringFromClass([self class]);
-
-    /*
-     ONLY affect YouTube private windows
-     Just let touches fall through.
-    */
-    if ([cls hasPrefix:@"YT"] &&
-        ![cls containsString:@"UIAlert"] &&
-        ![cls isEqualToString:@"UIWindow"]) {
-
-        return nil;
-    }
-
-    return %orig;
-}
-
 %end
