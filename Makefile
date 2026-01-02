@@ -1,7 +1,8 @@
 export THEOS_PACKAGE_SCHEME=rootful
 export TARGET = iphone:clang:latest:9.0
 export ARCHS = arm64 arm64e
-
+FINALPACKAGE = 1
+DEBUG = 0
 INSTALL_TARGET_PROCESSES = YouTube
 
 THEOS_DEVICE_IP = localhost
