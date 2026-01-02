@@ -1,0 +1,9 @@
+Package: com.i0s-tweak3r.ytnoalerts
+Name: ytnoalerts
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Blocks YouTube forced update dialogs on jailbroken devices.
+Maintainer: i0s_tweak3r
+Author: i0s_tweak3r
+Section: Tweaks
+Depends: mobilesubstrate
